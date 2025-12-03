@@ -8,14 +8,10 @@ class Cell(object):
         self.j = j  # y-axis index (row)
 
 
-"""TODO: You may consider defining a class to store your node data. If so, do
-that here."""
-
-
 class GridGraph:
     """Helper class to represent an occupancy grid map as a graph."""
     def __init__(self, file_path=None, width=-1, height=-1, origin=(0, 0),
-                 meters_per_cell=0, cell_odds=None, collision_radius=0.15, threshold=-100):
+                 meters_per_cell=0, cell_odds=None, collision_radius=0.15, threshold=50):
         """Constructor for the GridGraph class.
 
         Args:
@@ -45,7 +41,9 @@ class GridGraph:
         self.set_collision_radius(collision_radius)
         self.visited_cells = []  # Stores which cells have been visited in order for visualization.
 
-        # TODO: Define any additional member variables to store node data.
+        # Graph search data structures
+        self.parent_map = {}  # Maps (i, j) -> parent Cell for path reconstruction
+        self.cost_map = {}  # Maps (i, j) -> path cost/distance from start
 
     def as_string(self):
         """Returns the map data as a string for visualization."""
@@ -136,45 +134,70 @@ class GridGraph:
         self.collision_radius_cells = r_cells
 
     def check_collision(self, i, j):
-        """Checks whether this cell is in collision based on the collision radius
-        defined in the graph."""
-        # We will use the previously calculated mask over the robot radius to
-        # check whether any indices in a radius around the robot are in collision.
-        j_inds = self._coll_ind_j + j - (self.collision_radius_cells - 1)
-        i_inds = self._coll_ind_i + i - (self.collision_radius_cells - 1)
+        """Checks whether this cell is in collision considering robot collision radius.
+        
+        Uses precomputed collision mask to efficiently check if any cells
+        within the robot's radius are occupied.
+        
+        Args:
+            i: Column index of the cell to check
+            j: Row index of the cell to check
+            
+        Returns:
+            True if cell is in collision, False otherwise
+        """
+        # Shift collision mask to center on the cell being checked
+        mask_offset = self.collision_radius_cells - 1
+        mask_j_indices = self._coll_ind_j + j - mask_offset
+        mask_i_indices = self._coll_ind_i + i - mask_offset
 
-        # These are the indices in the bounds of the grid after we shift the
-        # robot mask to the cell we are checking.
-        in_bounds = np.bitwise_and(np.bitwise_and(j_inds >= 0, j_inds < self.height),
-                                   np.bitwise_and(i_inds >= 0, i_inds < self.width))
+        # Filter to only indices within map bounds
+        j_valid = (mask_j_indices >= 0) & (mask_j_indices < self.height)
+        i_valid = (mask_i_indices >= 0) & (mask_i_indices < self.width)
+        valid_mask = j_valid & i_valid
 
-        return np.any(self.is_cell_occupied(i_inds[in_bounds], j_inds[in_bounds]))
+        # Check if any valid cells in the mask are occupied
+        if np.any(valid_mask):
+            return np.any(self.is_cell_occupied(mask_i_indices[valid_mask], 
+                                                 mask_j_indices[valid_mask]))
+        return False
 
     def get_parent(self, cell):
-        """Returns a Cell object representing the parent of the given cell, or
-        None if the node has no parent. This function is used to trace back the
-        path after graph search."""
-        # TODO (P3): Return the parent of the node at the cell.
-        return None
+        """Returns the parent Cell for path reconstruction, or None if no parent."""
+        cell_key = (cell.i, cell.j)
+        return self.parent_map.get(cell_key)
 
     def init_graph(self):
-        """Initializes the node data in the graph in preparation for graph search.
-
-        When this funtion is called, the graph will have loaded the members
-        which store the properties of the graph, like width, height, and cell
-        odds values. You should use this information to initialize your added
-        values, like the distances and the nodes."""
-        self.visited_cells = []  # Reset visited cells for visualization.
-
-        # TODO (P3): Initialize your graph nodes.
+        """Initializes graph search data structures for a new search.
+        
+        Resets visited cells, parent mapping, and cost mapping to prepare
+        for a fresh path planning operation.
+        """
+        self.visited_cells = []
+        self.parent_map = {}
+        self.cost_map = {}
 
     def find_neighbors(self, i, j):
-        """Returns a list of the neighbors of the given cell. This should not
-        include any cells outside of the bounds of the graph."""
-        nbrs = []
-        # TODO (P3): Return a list of the indices of all the neighbors of the node
-        # at cell (i, j). You should not include any cells that are outside of the
-        # bounds of the graph.
-
-        # HINT: The function is_cell_in_bounds() might come in handy.
-        return nbrs
+        """Returns list of valid 4-connected neighboring cells.
+        
+        Args:
+            i: Column index of the cell
+            j: Row index of the cell
+            
+        Returns:
+            List of Cell objects representing valid neighbors (in bounds, no collision)
+        """
+        # 4-connected neighbors: up, down, right, left
+        neighbor_offsets = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+        valid_neighbors = []
+        
+        for di, dj in neighbor_offsets:
+            neighbor_i = i + di
+            neighbor_j = j + dj
+            
+            # Check bounds and collision
+            if (self.is_cell_in_bounds(neighbor_i, neighbor_j) and 
+                not self.check_collision(neighbor_i, neighbor_j)):
+                valid_neighbors.append(Cell(neighbor_i, neighbor_j))
+        
+        return valid_neighbors
