@@ -1,4 +1,5 @@
 import numpy as np
+import heapq
 from .graph import Cell
 from .utils import trace_path
 
@@ -23,46 +24,75 @@ visualize.
 """
 
 
-def depth_first_search(graph, start, goal):
-    """Depth First Search (DFS) algorithm. This algorithm is optional for P3.
-    Args:
-        graph: The graph class.
-        start: Start cell as a Cell object.
-        goal: Goal cell as a Cell object.
-    """
-    graph.init_graph()  # Make sure all the node values are reset.
-
-    """TODO (P3): Implement DFS (optional)."""
-
-    # If no path was found, return an empty list.
-    return []
-
-
-def breadth_first_search(graph, start, goal):
-    """Breadth First Search (BFS) algorithm.
-    Args:
-        graph: The graph class.
-        start: Start cell as a Cell object.
-        goal: Goal cell as a Cell object.
-    """
-    graph.init_graph()  # Make sure all the node values are reset.
-
-    """TODO (P3): Implement BFS."""
-
-    # If no path was found, return an empty list.
-    return []
-
-
 def a_star_search(graph, start, goal):
-    """A* Search (BFS) algorithm.
-    Args:
-        graph: The graph class.
-        start: Start cell as a Cell object.
-        goal: Goal cell as a Cell object.
+    """A* Search algorithm.
+    
+    Uses a priority queue with f(n) = g(n) + h(n) where:
+    - g(n): actual cost from start to node n
+    - h(n): heuristic estimate from node n to goal (Euclidean distance)
+    
+    Guarantees optimal path when heuristic is admissible.
     """
-    graph.init_graph()  # Make sure all the node values are reset.
-
-    """TODO (P3): Implement A*."""
-
-    # If no path was found, return an empty list.
+    graph.init_graph()
+    
+    # Heuristic function: Euclidean distance to goal
+    def heuristic_estimate(cell):
+        dx = cell.i - goal.i
+        dy = cell.j - goal.j
+        return np.sqrt(dx * dx + dy * dy)
+    
+    # Priority queue: (f_score, g_score, tiebreaker, cell)
+    # Using tiebreaker counter to ensure stable ordering
+    tiebreaker_counter = 0
+    priority_queue = [(heuristic_estimate(start), 0, tiebreaker_counter, start)]
+    
+    # Track closed/visited nodes
+    closed_set = set()
+    
+    # Initialize start node
+    start_key = (start.i, start.j)
+    graph.cost_map[start_key] = 0
+    graph.parent_map[start_key] = None
+    
+    # Main search loop
+    while priority_queue:
+        f_score, g_score, _, current_node = heapq.heappop(priority_queue)
+        node_key = (current_node.i, current_node.j)
+        
+        # Skip if already processed
+        if node_key in closed_set:
+            continue
+        
+        # Mark as closed
+        closed_set.add(node_key)
+        graph.visited_cells.append(Cell(current_node.i, current_node.j))
+        
+        # Check if we reached the goal
+        if current_node.i == goal.i and current_node.j == goal.j:
+            return trace_path(goal, graph)
+        
+        # Explore neighbors
+        adjacent_cells = graph.find_neighbors(current_node.i, current_node.j)
+        for next_cell in adjacent_cells:
+            neighbor_key = (next_cell.i, next_cell.j)
+            
+            # Skip if already processed
+            if neighbor_key in closed_set:
+                continue
+            
+            # Calculate new cost from start to neighbor
+            tentative_g_score = g_score + 1
+            
+            # Update if we found a better path to this neighbor
+            if neighbor_key not in graph.cost_map or tentative_g_score < graph.cost_map[neighbor_key]:
+                graph.cost_map[neighbor_key] = tentative_g_score
+                graph.parent_map[neighbor_key] = Cell(current_node.i, current_node.j)
+                
+                # Calculate f_score and add to priority queue
+                h_score = heuristic_estimate(next_cell)
+                f_score = tentative_g_score + h_score
+                tiebreaker_counter += 1
+                heapq.heappush(priority_queue, (f_score, tentative_g_score, tiebreaker_counter, next_cell))
+    
+    # No path found
     return []
